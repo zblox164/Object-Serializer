@@ -42,7 +42,7 @@ local function safeCall(plrName, func, requestType, ...)
 		if not success  then
 			warn(ret)
 		end
-	until success or plrName and not players:FindFirstChild(plrName)
+	until success or not players:FindFirstChild(plrName)
 	
 	return success, ret
 end
@@ -73,8 +73,17 @@ local function serialize(plr, pause)
 			end
 		end
 		
-		-- To prevent errors and data loss
-		safeCall()
+		local success, ret
+		
+		repeat
+			if not pause then
+				waitForRequestBudget(Enum.DataStoreRequestType.SetIncrementAsync)
+			end
+			
+			success, ret = pcall(dataStore.UpdateAsync, dataStore, key, function()
+				return data
+			end)
+		until success
 	end
 end
 
@@ -150,10 +159,23 @@ serializeE.OnServerEvent:Connect(serialize)
 
 game:BindToClose(function()
 	if runService:IsStudio() then
-		wait(1)
+		task.wait(2)
 	else
-		for _, plr in ipairs(players:GetPlayers()) do
-			coroutine.wrap(serialize)(plr, true)
+		local finished = Instance.new("BindableEvent")
+		local allPlayers = players:GetPlayers()
+		local leftPlayers = #allPlayers
+
+		for _,player in ipairs(allPlayers) do
+			coroutine.wrap(function()
+				serialize(player, true)
+				leftPlayers -= 1
+						
+				if leftPlayers == 0 then
+					finished:Fire()
+				end
+			end)()
 		end
+
+		finished.Event:Wait()
 	end
 end)
